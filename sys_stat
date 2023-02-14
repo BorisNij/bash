@@ -1,80 +1,64 @@
 #!/bin/bash
 
-# Function to display system stats in tabular form
-function sys_stat_tbl {
-  echo "User     CPU     Memory      Processes"
-  echo "---------------------------------------"
-  ps -u "${users[@]}" -o user=,%cpu=,%mem=,args= | awk '
+# function to display system stats in table format
+display_system_stats_table() {
+  # get the total cpu, memory usage, and number of processes for each user
+  local stats=$(ps -eo user,%cpu,%mem,args | awk -v group="$1" '
     BEGIN {
-      print "User     CPU     Memory      Processes"
-      print "---------------------------------------"
+      printf "User\tCPU\tMemory\tProcesses\n"
     }
-    {
-      if (!user_stats[$1]) {
-        user_stats[$1] = { cpu_total: 0, mem_total: 0, process_count: 0 }
-      }
-      user_stats[$1].cpu_total += $2
-      user_stats[$1].mem_total += $3
-      user_stats[$1].process_count++
+    $1 == group {
+      user[$1] += $2;
+      mem[$1] += $3;
+      count[$1]++;
     }
     END {
-      for (user in user_stats) {
-        printf "%-8s %-8s %-10s %-10s\n", user, user_stats[user].cpu_total, user_stats[user].mem_total, user_stats[user].process_count
+      for (u in user) {
+        printf "%s\t%.2f\t%.2f\t%d\n", u, user[u], mem[u], count[u]
       }
     }
-  '
+  ')
+  echo "$stats"
 }
 
-# Function to display system stats in json format
-function sys_stat_json {
-  ps -u "${users[@]}" -o user=,%cpu=,%mem=,args= | awk '
+# function to display system stats in json format
+display_system_stats_json() {
+  # get the total cpu, memory usage, and number of processes for each user
+  local stats=$(ps -eo user,%cpu,%mem,args | awk -v group="$1" '
     BEGIN {
-      output = "["
+      printf "["
     }
-    {
-      if (!user_stats[$1]) {
-        user_stats[$1] = { cpu_total: 0, mem_total: 0, process_count: 0 }
-      }
-      user_stats[$1].cpu_total += $2
-      user_stats[$1].mem_total += $3
-      user_stats[$1].process_count++
+    $1 == group {
+      user[$1] += $2;
+      mem[$1] += $3;
+      count[$1]++;
     }
     END {
-      for (user in user_stats) {
-        output = output sprintf("{\"user\":\"%s\",\"cpu\":\"%.1f\",\"memory\":\"%.1f\",\"processes\":\"%d\"},", user, user_stats[user].cpu_total, user_stats[user].mem_total, user_stats[user].process_count)
+      for (u in user) {
+        if (first) {
+          first = 0;
+        } else {
+          printf ","
+        }
+        printf "{\"user\":\"%s\",\"cpu\":%.2f,\"memory\":%.2f,\"processes\":%d}\n", u, user[u], mem[u], count[u]
       }
-      output = substr(output, 0, length(output)-1)
-      output = output "]"
-      print output
+      printf "]"
     }
-  '
+  ')
+  echo "$stats"
 }
 
-# Check if group name is provided
-if [ "$#" -lt 1 ]; then
-  echo "Error: Group name not provided."
-  echo "Usage: $0 <group_name> [table|json]"
+# main script
+group="$1"
+format="$2"
+
+if [ -z "$group" ]; then
+  echo "Error: user group name is required"
   exit 1
 fi
 
-# Get all users in the group
-group=$1
-users=($(getent group "$group" | cut -d: -f4 | tr ',' '\n'))
-
-# Check if output format is provided
-if [ "$#" -eq 2 ]; then
-  format=$2
+if [ "$format" == "json" ]; then
+  display_system_stats_json "$group"
 else
-  format="table"
-fi
-
-# Call the appropriate function based on output format
-if [ "$format" == "table" ]; then
-  sys_stat_tbl
-elif [ "$format" == "json" ]; then
-  sys_stat_json
-else
-  echo "Error: Invalid output format."
-  echo "Usage: $0 <group_name> [table|json]"
-  exit 1
+  display_system_stats_table "$group"
 fi
